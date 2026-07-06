@@ -1,0 +1,33 @@
+{
+  "dataset_name": "Peru Primary Enrollment and GDP Per Capita, 2001-2020",
+  "country": "Peru",
+  "country_code": "PER",
+  "description": "Clean dataset combining Peru primary education enrollment and GDP per capita data from 2001 through 2020.",
+  "source_files": [
+    "API_SE.PRM.ENRL_DS2_en_csv_v2_4538564.csv",
+    "WDIData.csv"
+  ],
+  "table_name": "peru_primary_enrollment_gdp",
+  "columns": [
+    {
+      "column_name": "Row",
+      "data_type": "Integer",
+      "meaning": "Index value beginning at 0 to match the assignment example format."
+    },
+    {
+      "column_name": "Year",
+      "data_type": "Integer",
+      "meaning": "Calendar year for the observation, ranging from 2001 through 2020."
+    },
+    {
+      "column_name": "Primary_Enrollment",
+      "data_type": "Numeric",
+      "meaning": "Primary education enrollment count for Peru."
+    },
+    {
+      "column_name": "GDP",
+      "data_type": "Numeric",
+      "meaning": "GDP per capita for Peru in current U.S. dollars."
+    }
+  ]
+}

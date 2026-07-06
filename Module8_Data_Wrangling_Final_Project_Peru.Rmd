@@ -1,0 +1,304 @@
+---
+title: "Data Wrangling in Practice: Primary Enrollment and GDP in Peru"
+author: "Qionn Hicks"
+date: "July 2026"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Project Purpose
+
+This notebook completes the data wrangling portion of the Module 8 final project. The goal is to create a clean dataset that places primary education enrollment and GDP per capita data side by side for one country from 2001 through 2020. Peru was selected because it is not the textbook country, India, and the provided files contain complete values for both required indicators across the full assignment period.
+
+## Load Required Libraries
+
+```{r}
+# tidyverse provides the main data wrangling tools used in this project.
+# It includes functions for filtering rows, selecting columns, reshaping data,
+# joining tables, checking values, and exporting clean CSV files.
+library(tidyverse)
+
+# DBI provides a common interface for connecting R to databases.
+# It allows the final clean dataset to be written into a SQL database.
+library(DBI)
+
+# RSQLite allows this notebook to create and work with a SQLite database file.
+# SQLite is useful here because it creates a portable database file that can
+# be uploaded to GitHub with the CSV and JSON files.
+library(RSQLite)
+
+# jsonlite is used to create the required JSON data description file.
+# The JSON file explains each column in the final clean CSV dataset.
+library(jsonlite)
+```
+
+## Load the Primary Education Enrollment Dataset
+
+```{r}
+# This file contains primary education enrollment data for countries around
+# the world. The file was provided with the assignment.
+
+# The first four rows in this World Bank style CSV contain metadata instead
+# of the actual table headers. For that reason, skip = 4 is used so R begins
+# reading the real dataset at the correct row.
+education_raw <- read_csv(
+  "API_SE.PRM.ENRL_DS2_en_csv_v2_4538564.csv",
+  skip = 4
+)
+
+# Display the first few rows to confirm that the file loaded correctly.
+# This also allows the column names and general structure to be checked before
+# any cleaning steps are performed.
+head(education_raw)
+```
+
+## Clean the Education Dataset
+
+```{r}
+# The raw education file contains many countries and many years.
+# This project only needs one country and the years 2001 through 2020.
+
+education_clean <- education_raw %>%
+  
+  # Filter to Peru only. The assignment allows any country except India, and
+  # Peru has complete primary enrollment data for the full 2001-2020 period.
+  filter(`Country Name` == "Peru") %>%
+  
+  # Keep the country identifiers and the year columns required for the project.
+  # The other columns are not needed for the final joined dataset.
+  select(`Country Name`, `Country Code`, `2001`:`2020`) %>%
+  
+  # Convert the dataset from wide format to long format.
+  # In the original file, each year is a separate column. In the clean version,
+  # each row represents one year. This makes the data easier to join with GDP.
+  pivot_longer(
+    cols = `2001`:`2020`,
+    names_to = "Year",
+    values_to = "Primary_Enrollment"
+  ) %>%
+  
+  # Convert the Year column from character text to integer values.
+  # Convert enrollment values to numeric values so they can be analyzed properly.
+  mutate(
+    Year = as.integer(Year),
+    Primary_Enrollment = as.numeric(Primary_Enrollment)
+  ) %>%
+  
+  # Keep only the fields that will be used in the final merged dataset.
+  select(Year, Primary_Enrollment)
+
+# Display the cleaned education data to verify that there is one row per year.
+education_clean
+```
+
+## Load the World Development Indicators GDP Dataset
+
+```{r}
+# The WDIData.csv file contains many different World Development Indicators.
+# This file is messy for the purpose of this assignment because GDP per capita
+# is only one indicator among many thousands of country-indicator combinations.
+
+wdi_raw <- read_csv("WDIData.csv")
+
+# Display the first few rows to confirm that the WDI file loaded successfully.
+head(wdi_raw)
+```
+
+## Clean the GDP Per Capita Dataset
+
+```{r}
+# GDP per capita is identified in the World Development Indicators dataset
+# by the indicator code NY.GDP.PCAP.CD.
+
+# This indicator represents GDP per capita in current U.S. dollars.
+# Filtering by the indicator code prevents the project from accidentally using
+# a different GDP measurement or unrelated economic indicator.
+
+gdp_clean <- wdi_raw %>%
+  
+  # Keep only Peru and only the GDP per capita indicator.
+  filter(
+    `Country Name` == "Peru",
+    `Indicator Code` == "NY.GDP.PCAP.CD"
+  ) %>%
+  
+  # Keep country identifiers and the required year columns.
+  select(`Country Name`, `Country Code`, `2001`:`2020`) %>%
+  
+  # Convert the year columns from wide format to long format so that GDP has
+  # the same structure as the cleaned education dataset.
+  pivot_longer(
+    cols = `2001`:`2020`,
+    names_to = "Year",
+    values_to = "GDP"
+  ) %>%
+  
+  # Convert Year to integer and GDP to numeric for proper analysis.
+  mutate(
+    Year = as.integer(Year),
+    GDP = as.numeric(GDP)
+  ) %>%
+  
+  # Keep only the columns needed for the final project dataset.
+  select(Year, GDP)
+
+# Display the cleaned GDP data to verify that one GDP value exists for each year.
+gdp_clean
+```
+
+## Join Education and GDP Data
+
+```{r}
+# Both cleaned datasets now share a Year column.
+# An inner join is appropriate because the final dataset should only contain
+# years where both enrollment and GDP data are available.
+
+final_dataset <- education_clean %>%
+  
+  # Join the primary enrollment data and GDP data by Year.
+  inner_join(gdp_clean, by = "Year") %>%
+  
+  # Sort the final result in chronological order from 2001 to 2020.
+  arrange(Year) %>%
+  
+  # Add a Row column beginning at 0 to match the assignment example format.
+  mutate(Row = row_number() - 1) %>%
+  
+  # Place columns in the same order as the example: Row, Year,
+  # Primary Enrollment, and GDP.
+  select(Row, Year, Primary_Enrollment, GDP)
+
+# Display the final clean dataset.
+final_dataset
+```
+
+## Check Final Dataset Quality
+
+```{r}
+# Check the structure of the final dataset.
+# This confirms that Row and Year are integers and that the measurement columns
+# are numeric values.
+str(final_dataset)
+
+# Check for missing values in each column.
+# A complete final dataset should show zero missing values for all columns.
+colSums(is.na(final_dataset))
+
+# Display summary statistics to inspect the range of enrollment and GDP values.
+summary(final_dataset)
+```
+
+## Export the Final Dataset to CSV
+
+```{r}
+# Export the cleaned and joined dataset to a CSV file.
+# This file is one of the required Part 1 and Part 2 deliverables.
+write_csv(
+  final_dataset,
+  "peru_primary_enrollment_gdp_2001_2020.csv"
+)
+```
+
+## Create a SQLite Database
+
+```{r}
+# Create a connection to a SQLite database file.
+# If the file does not already exist, R creates it automatically.
+conn <- dbConnect(
+  SQLite(),
+  "peru_education_gdp.db"
+)
+
+# Write the final dataset into a SQL table.
+# overwrite = TRUE allows the notebook to be rerun without creating duplicate
+# versions of the same table.
+dbWriteTable(
+  conn,
+  "peru_primary_enrollment_gdp",
+  final_dataset,
+  overwrite = TRUE
+)
+
+# List the tables in the database to confirm that the SQL table was created.
+dbListTables(conn)
+
+# Query the table back from the database to confirm that the CSV data was
+# inserted correctly into SQLite.
+dbGetQuery(
+  conn,
+  "SELECT * FROM peru_primary_enrollment_gdp"
+)
+```
+
+## Create the JSON Data Description File
+
+```{r}
+# The JSON file documents the final CSV dataset.
+# It explains each column name, data type, and meaning, which is required for
+# the GitHub portion of the final project.
+
+data_description <- list(
+  dataset_name = "Peru Primary Enrollment and GDP Per Capita, 2001-2020",
+  country = "Peru",
+  country_code = "PER",
+  description = "Clean dataset combining Peru primary education enrollment and GDP per capita data from 2001 through 2020.",
+  source_files = c(
+    "API_SE.PRM.ENRL_DS2_en_csv_v2_4538564.csv",
+    "WDIData.csv"
+  ),
+  table_name = "peru_primary_enrollment_gdp",
+  columns = list(
+    list(
+      column_name = "Row",
+      data_type = "Integer",
+      meaning = "Index value beginning at 0 to match the assignment example format."
+    ),
+    list(
+      column_name = "Year",
+      data_type = "Integer",
+      meaning = "Calendar year for the observation, ranging from 2001 through 2020."
+    ),
+    list(
+      column_name = "Primary_Enrollment",
+      data_type = "Numeric",
+      meaning = "Primary education enrollment count for Peru."
+    ),
+    list(
+      column_name = "GDP",
+      data_type = "Numeric",
+      meaning = "GDP per capita for Peru in current U.S. dollars."
+    )
+  )
+)
+
+# Export the data description to a formatted JSON file.
+write_json(
+  data_description,
+  "peru_primary_enrollment_gdp_description.json",
+  pretty = TRUE,
+  auto_unbox = TRUE
+)
+```
+
+## Close the Database Connection
+
+```{r}
+# Closing the connection is good database practice.
+# It prevents file locks and confirms the database writing process is complete.
+dbDisconnect(conn)
+```
+
+## Confirm Created Files
+
+```{r}
+# List the files in the working directory so the required deliverables can be
+# verified before uploading them to GitHub or submitting the assignment.
+list.files()
+```
+
+## Final Project Note
+
+The final dataset successfully combines Peru's primary education enrollment and GDP per capita data for 2001 through 2020. The dataset was exported to CSV, inserted into a SQLite database, and documented using a JSON data description file.
